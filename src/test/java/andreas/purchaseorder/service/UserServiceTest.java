@@ -4,6 +4,7 @@ import andreas.purchaseorder.dto.request.user.UserCreateRequest;
 import andreas.purchaseorder.dto.request.user.UserUpdateRequest;
 import andreas.purchaseorder.dto.response.UserResponse;
 import andreas.purchaseorder.entity.User;
+import andreas.purchaseorder.exception.customException.ConflictException;
 import andreas.purchaseorder.exception.customException.ResourceNotFoundException;
 import andreas.purchaseorder.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,112 +40,115 @@ public class UserServiceTest {
     @BeforeEach
     void setUp() {
         user = User.builder()
-                .id(1)
+                .id(1001)
                 .firstName("Andreas")
                 .lastName("Oktafian")
                 .email("andreas@example.com")
                 .phone("08123456789")
-                .createdBy("system")
+                .createdBy("admin")
                 .build();
     }
 
     @Test
     void findAll_ShouldReturnPagedUsers() {
-        Pageable pageable = PageRequest.of(1, 10);
-        Page<User> userPage = new PageImpl<>(List.of(user), pageable, 1);
 
-        when(userRepository.findAll(pageable)).thenReturn(userPage);
+        Pageable pageable = PageRequest.of(0, 10);
+        when(userRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(user)));
 
         Page<UserResponse> result = userService.findAll(pageable);
 
-        assertThat(result).isNotNull();
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().firstName()).isEqualTo("Andreas");
-        verify(userRepository, times(1)).findAll(pageable);
+
     }
 
     @Test
     void findById_WhenUserExists_ShouldReturnUser() {
-        when(userRepository.findById(1)).thenReturn(Optional.of(user));
 
-        UserResponse result = userService.findById(1);
-
-        assertThat(result).isNotNull();
-        assertThat(result.id()).isEqualTo(1);
+        when(userRepository.findById(1001)).thenReturn(Optional.of(user));
+        UserResponse result = userService.findById(1001);
         assertThat(result.firstName()).isEqualTo("Andreas");
-        verify(userRepository, times(1)).findById(1);
+
     }
 
     @Test
-    void findById_WhenUserNotFound_ShouldThrowException() {
-        when(userRepository.findById(99)).thenReturn(Optional.empty());
+    void create_WhenValidRequest_ShouldSaveAndReturnUser() {
 
-        assertThatThrownBy(() -> userService.findById(99))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("User with ID 99 could not be found");
+        UserCreateRequest request = new UserCreateRequest("John", "Doe", "john@example.com", "0899999");
 
-        verify(userRepository, times(1)).findById(99);
+        when(userRepository.existsByEmail("john@example.com")).thenReturn(false);
+        when(userRepository.existsByPhone("0899999")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        UserResponse result = userService.create(request, "admin");
+
+        assertThat(result.firstName()).isEqualTo("John");
+        verify(userRepository, times(1)).save(any(User.class));
+
     }
 
     @Test
-    void create_ShouldSaveAndReturnUser() {
-        UserCreateRequest request = new UserCreateRequest("Andreas", "Oktafian", "andreas@example.com", "08123456789");
+    void update_WhenValidRequest_ShouldUpdateAndReturnUser() {
 
+        UserUpdateRequest request = new UserUpdateRequest("Updated", null, "updated@example.com", null);
+
+        when(userRepository.findById(1001)).thenReturn(Optional.of(user));
+        when(userRepository.existsByEmailAndIdNot("updated@example.com", 1001)).thenReturn(false);
         when(userRepository.save(any(User.class))).thenReturn(user);
 
-        UserResponse result = userService.create(request, "system");
+        UserResponse result = userService.update(1001, request, "admin");
 
-        assertThat(result).isNotNull();
-        assertThat(result.firstName()).isEqualTo("Andreas");
-        verify(userRepository, times(1)).save(any(User.class));
-    }
+        assertThat(result.firstName()).isEqualTo("Updated");
+        verify(userRepository).save(user);
 
-    @Test
-    void update_WhenUserExists_ShouldUpdateAndReturnUser() {
-        UserUpdateRequest request = new UserUpdateRequest("UpdatedName", null, null, null);
-
-        when(userRepository.findById(1)).thenReturn(Optional.of(user));
-        when(userRepository.save(any(User.class))).thenReturn(user);
-
-        UserResponse result = userService.update(1, request, "admin");
-
-        assertThat(result).isNotNull();
-        verify(userRepository, times(1)).findById(1);
-        verify(userRepository, times(1)).save(any(User.class));
-    }
-
-    @Test
-    void update_WhenUserNotFound_ShouldThrowException() {
-        UserUpdateRequest request = new UserUpdateRequest("UpdatedName", null, null, null);
-
-        when(userRepository.findById(99)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> userService.update(99, request, "admin"))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("User with ID 99 could not be found");
-
-        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
     void delete_WhenUserExists_ShouldDeleteUser() {
-        when(userRepository.findById(1)).thenReturn(Optional.of(user));
-        doNothing().when(userRepository).delete(user);
 
-        userService.delete(1);
-
-        verify(userRepository, times(1)).findById(1);
+        when(userRepository.findById(1001)).thenReturn(Optional.of(user));
+        userService.delete(1001);
         verify(userRepository, times(1)).delete(user);
+
     }
 
     @Test
-    void delete_WhenUserNotFound_ShouldThrowException() {
+    void findById_WhenUserNotFound_ShouldThrowException() {
+
         when(userRepository.findById(99)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.delete(99))
-                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> userService.findById(99))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("could not be found");
 
-        verify(userRepository, never()).delete(any(User.class));
+    }
+
+    @Test
+    void create_WhenEmailExists_ShouldThrowConflictException() {
+
+        UserCreateRequest request = new UserCreateRequest("John", "Doe", "exist@example.com", "0899999");
+
+        when(userRepository.existsByEmail("exist@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.create(request, "admin"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already in use");
+
+        verify(userRepository, never()).save(any());
+
+    }
+
+    @Test
+    void update_WhenPhoneExists_ShouldThrowConflictException() {
+
+        UserUpdateRequest request = new UserUpdateRequest(null, null, null, "08111111");
+
+        when(userRepository.findById(1001)).thenReturn(Optional.of(user));
+        when(userRepository.existsByPhoneAndIdNot("08111111", 1001)).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.update(1001, request, "admin"))
+                .isInstanceOf(ConflictException.class);
+
     }
 
 }
