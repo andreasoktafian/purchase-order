@@ -1,3 +1,5 @@
+CREATE DATABASE IF NOT EXISTS andreas_oktafian;
+
 CREATE TABLE users (
     id INT UNSIGNED PRIMARY KEY,
     first_name VARCHAR(500) NOT NULL,
