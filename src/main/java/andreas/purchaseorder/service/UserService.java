@@ -41,6 +41,7 @@ public class UserService {
 
     }
 
+    @Transactional
     @LogBusinessEvent("CREATE_USER")
     public UserResponse create(@NonNull UserCreateRequest request, String actionBy) {
 
@@ -59,8 +60,8 @@ public class UserService {
 
     }
 
-    @LogBusinessEvent("UPDATE_USER")
     @Transactional
+    @LogBusinessEvent("UPDATE_USER")
     public UserResponse update(Integer id, @NonNull UserUpdateRequest request, String actionBy) {
 
         var user = userRepository.findById(id)
@@ -73,6 +74,7 @@ public class UserService {
 
     }
 
+    @Transactional
     @LogBusinessEvent("DELETE_USER")
     public void delete(Integer id) {
 

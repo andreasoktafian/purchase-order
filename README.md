@@ -1,149 +1,537 @@
-*Read this in other languages: [English](README.md), [Indonesian](README-id.md)*
+# 📦 Purchase Order Service
 
-# Purchase Order Management Service
+![Java](https://img.shields.io/badge/Java-21-orange.svg) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1.0-brightgreen.svg) ![MySQL](https://img.shields.io/badge/MySQL-Database-blue.svg)
 
-A robust, RESTful Spring Boot microservice designed to manage Items, Users, and Purchase Order transactions. This project demonstrates enterprise-level backend practices including database migrations, automated auditing, N+1 query prevention, and robust validation.
+A robust and scalable backend service for managing Users, Items, and Purchase Orders. Built with modern Java standards, this service incorporates best practices in transaction management, centralized error handling, business event logging, and observability.
 
-## Tech Stack
+---
 
-*   **Java 21** (Virtual Threads enabled)
-*   **Spring Boot** (Web, Data JPA, Validation)
-*   **MySQL**
-*   **Lombok** (Boilerplate reduction)
-*   **Maven**
+## ✨ Key Features & Advantages
+* **Modern Threading Model:** Fully configured to utilize **Java Virtual Threads** (`spring.threads.virtual.enabled=true`) for high-throughput and lightweight concurrency.
+* **Aspect-Oriented Programming (AOP):** Implements `@LogBusinessEvent` to automatically intercept, trace, and measure the execution time of core business logic without polluting the service layer.
+* **Traceability & MDC:** Includes a custom `PurchaseOrderFilter` that automatically handles `X-Correlation-ID` and `X-User-ID` headers, injecting them into the Mapped Diagnostic Context (MDC) for seamless log tracing.
+* **Global Exception Handling:** A centralized `@RestControllerAdvice` that translates exceptions (e.g., `ResourceNotFoundException`, `ConflictException`, `MethodArgumentNotValidException`) into standardized, predictable JSON error responses.
+* **JPA Auditing:** Automatically manages `created_datetime`, `updated_datetime`, `created_by`, and `updated_by` fields using `@EnableJpaAuditing` and custom `AppRequestContext` resolution.
+* **Smart Data Trimming:** Configured with custom Jackson and WebDataBinder modules to automatically trim whitespaces from incoming string payloads.
 
-## Architectural Assumptions & Design Decisions
+## 🛠 Specifications
+* **Language:** Java 21
+* **Framework:** Spring Boot 4.1.0 (Web, Data JPA, Validation)
+* **Database:** MySQL
+* **Build Tool:** Maven
 
-As a downstream microservice, several architectural decisions were made to ensure scalability, loose coupling, and readiness for a distributed environment:
+## ⚙️ Configuration & Profiles
 
-1.  **API Gateway Offloading (Authentication):**
-    This service assumes that JWT extraction and validation are handled centrally by an API Gateway. The service expects user identity to be forwarded via HTTP Headers (intercepted and mapped into `AppRequestContext`). This keeps the service stateless and focused entirely on business logic.
-2.  **Loose Coupling (No Hard Foreign Keys to Users):**
-    The `users` table acts as a loosely coupled entity. Audit fields (`created_by`, `updated_by`) store string-based identifiers rather than hard physical Foreign Keys. This prevents data loss in PO transactions if a user is hard-deleted from an external IAM (Identity and Access Management) service, maintaining a reliable audit trail.
-3.  **Pagination Stability:**
-    Utilized Spring Data's `PagedModel` configuration (`@EnableSpringDataWebSupport`) to ensure JSON structure stability for pagination responses, preventing breaking changes on the client side during framework upgrades.
+This application uses Spring Profiles to separate environments.
 
-## Key Features & Technical Highlights
+### 1. Local Profile (`local`)
+* Runs on port `8090`.
+* Exposes SQL queries in the console (`show-sql: true`).
+* Requires a local MySQL database named `andreas_oktafian`.
+* **To run locally in IntelliJ:** Set `-Dspring.profiles.active=local` in your VM Options, or set the `SPRING_PROFILES_ACTIVE=local` environment variable.
 
-*   **Smart Update (PATCH/PUT behavior):** Entity updates intelligently ignore `null` or empty values, allowing partial updates without overwriting existing data.
-*   **Cross-Field Validation:** Implemented custom `@AssertTrue` validations at the DTO layer to enforce business rules (e.g., preventing an Item's `price` from being set lower than its `cost`).
-*   **N+1 Query Prevention:** Utilized `LEFT JOIN FETCH` in JPA Repositories for endpoints retrieving Purchase Order details, reducing database roundtrips from *O(N)* to *O(1)*.
-*   **Automated Auditing:** Integrated `@EnableJpaAuditing` with custom entity listeners to automatically populate `created_datetime` and `updated_datetime`.
-*   **Defensive Programming:** Applied `@NonNull` and Jakarta Validation (`@NotBlank`, `@Min`) rigorously across Service and Controller layers to ensure data integrity before database execution.
+### 2. Production Profile (`prod`)
+* Hides SQL queries (`show-sql: false`) and disables auto DDL (`ddl-auto: none`).
+* Secures credentials using environment variables: `${DATABASE_URL}`, `${USERNAME}`, and `${PASSWORD}`.
 
-## Getting Started
+## 🚀 How to Run
 
-### Prerequisites
-*   Java 21 JDK installed.
-*   MySQL Server running on default port `3306`.
-*   Maven installed (or use the provided wrapper).
+1. Clone the repository.
+2. Create a MySQL database named `andreas_oktafian`.
+3. Manually run the provided SQL scripts from the resources folder to create the tables and insert initial data.
+4. Run the application:
+   ```bash
+   ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 
-### 1. Database Setup
-Create an empty database in your MySQL server:
-```sql
-CREATE DATABASE andreas_oktafian;
+### 👤 USERS API (`/api/users`)
 
-CREATE TABLE users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(255) NOT NULL,
-    last_name VARCHAR(255),
-    email VARCHAR(255),
-    phone VARCHAR(20),
-    created_by VARCHAR(50),
-    created_datetime DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    updated_datetime DATETIME NULL ON UPDATE CURRENT_TIMESTAMP
-);
+#### Payload Field Descriptions:
+| Field | Type | Required | Rules & Description |
+| :--- | :--- | :--- | :--- |
+| `first_name` | String | **Yes** | Cannot be blank. User's primary name. |
+| `last_name` | String | No | User's family/surname. |
+| `email` | String | No | Must be a valid email format. Must be unique across users. |
+| `phone` | String | No | Contact number. Must be unique across users. |
 
-CREATE TABLE item (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    price INT NOT NULL,
-    cost INT NOT NULL,
-    created_by VARCHAR(50),
-    created_datetime DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(50),
-    updated_datetime DATETIME NULL ON UPDATE CURRENT_TIMESTAMP
-);
+#### ➤ GET All Users
+* **Method & Endpoint:** `GET /api/users?page=1&size=10`
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": {
+      "success": true,
+      "code": 200,
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d",
+      "message": "All users retrieved successfully"
+    },
+    "data": {
+      "content": [
+        {
+          "id": 10001,
+          "first_name": "John",
+          "last_name": "Doe",
+          "email": "john.doe@example.com",
+          "phone": "08123456789",
+          "created_by": "admin",
+          "updated_by": null,
+          "created_datetime": "2026-08-15T12:00:00",
+          "updated_datetime": "2026-08-15T12:00:00"
+        }
+      ],
+      "page": { "size": 10, "number": 1, "total_elements": 1, "total_pages": 1 }
+    }
+  }
+  ```
 
-CREATE TABLE po_h (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    datetime DATETIME,
-    description VARCHAR(500),
-    total_price INT,
-    total_cost INT,
-    created_by VARCHAR(255),
-    updated_by VARCHAR(255),
-    created_datetime DATETIME,
-    updated_datetime DATETIME
-);
+#### ➤ GET User by ID
+* **Method & Endpoint:** `GET /api/users/10001` (or `GET /api/users?id=10001`)
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "User retrieved successfully" 
+    },
+    "data": {
+      "id": 10001,
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john.doe@example.com",
+      "phone": "08123456789",
+      "created_by": "admin",
+      "updated_by": null,
+      "created_datetime": "2026-08-15T12:00:00",
+      "updated_datetime": "2026-08-15T12:00:00"
+    }
+  }
+  ```
 
-CREATE TABLE po_d (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    poh_id INT,
-    item_id INT,
-    item_qty INT,
-    item_cost INT,
-    item_price INT,
-    FOREIGN KEY (poh_id) REFERENCES po_h(id) ON DELETE CASCADE,
-    FOREIGN KEY (item_id) REFERENCES item(id)
-);
-```
+#### ➤ POST (Create User)
+* **Method & Endpoint:** `POST /api/users`
+* **Request Payload:**
+  ```json
+  {
+    "first_name": "Andreas",
+    "last_name": "Oktafian 2",
+    "email": "andreas.oktafiann3@example.com",
+    "phone": "081112223501"
+  }
+  ```
+* **Response (201 Created):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 201, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "User created successfully" 
+    },
+    "data": {
+      "id": 1854272225,
+      "first_name": "Andreas",
+      "last_name": "Oktafian 2",
+      "email": "andreas.oktafiann3@example.com",
+      "phone": "081112223501",
+      "created_by": "1048401782",
+      "updated_by": null,
+      "created_datetime": "2026-08-15T12:42:53.1429079",
+      "updated_datetime": "2026-08-15T12:42:53.1429079"
+    }
+  }
+  ```
 
-### 2. Insert Data
-Insert dummy data:
-```sql
-INSERT INTO Users (first_name, last_name, email, phone, created_by, created_datetime, updated_datetime)
-VALUES
-    ('Siti', 'Rahma', 'siti.rahma@example.com', '08111222333', 'system', NOW(), NOW()),
-    ('Joko', 'Widodo', 'joko.widodo@example.com', '08122334455', 'system', NOW(), NOW()),
-    ('Dewi', 'Lestari', 'dewi.lestari@example.com', '08133445566', 'system', NOW(), NOW()),
-    ('Eko', 'Prasetyo', 'eko.prasetyo@example.com', '08144556677', 'system', NOW(), NOW()),
-    ('Rina', 'Marlina', 'rina.marlina@example.com', '08155667788', 'system', NOW(), NOW()),
-    ('Ahmad', 'Fauzi', 'ahmad.fauzi@example.com', '08166778899', 'system', NOW(), NOW()),
-    ('Dian', 'Sastro', 'dian.sastro@example.com', '08177889900', 'system', NOW(), NOW()),
-    ('Reza', 'Rahadian', 'reza.rahadian@example.com', '08188990011', 'system', NOW(), NOW()),
-    ('Putri', 'Ariani', 'putri.ariani@example.com', '08199001122', 'system', NOW(), NOW()),
-    ('Rizky', 'Febian', 'rizky.febian@example.com', '08100112233', 'system', NOW(), NOW()),
-    ('Angga', 'Yunanda', 'angga.yunanda@example.com', '08211223344', 'system', NOW(), NOW()),
-    ('Tasya', 'Kamila', 'tasya.kamila@example.com', '08222334455', 'system', NOW(), NOW()),
-    ('Raffi', 'Ahmad', 'raffi.ahmad@example.com', '08233445566', 'system', NOW(), NOW()),
-    ('Nagita', 'Slavina', 'nagita.slavina@example.com', '08244556677', 'system', NOW(), NOW()),
-    ('Deddy', 'Corbuzier', 'deddy.corbuzier@example.com', '08255667788', 'system', NOW(), NOW()),
-    ('Najwa', 'Shihab', 'najwa.shihab@example.com', '08266778899', 'system', NOW(), NOW()),
-    ('Raditya', 'Dika', 'raditya.dika@example.com', '08277889900', 'system', NOW(), NOW()),
-    ('Maudy', 'Ayunda', 'maudy.ayunda@example.com', '08288990011', 'system', NOW(), NOW()),
-    ('Jerome', 'Polin', 'jerome.polin@example.com', '08299001122', 'system', NOW(), NOW()),
-    ('Jessica', 'Jane', 'jessica.jane@example.com', '08200112233', 'system', NOW(), NOW());
+#### ➤ PUT (Update User)
+* **Method & Endpoint:** `PUT /api/users/10001`
+* **Request Payload:**
+  ```json
+  {
+    "first_name": "Johnny",
+    "last_name": "Doe",
+    "email": "johnny.updated@example.com",
+    "phone": "08987654321"
+  }
+  ```
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "User updated successfully" 
+    },
+    "data": {
+      "id": 10001,
+      "first_name": "Johnny",
+      "last_name": "Doe",
+      "email": "johnny.updated@example.com",
+      "phone": "08987654321",
+      "created_by": "1048401782",
+      "updated_by": "1048401782",
+      "created_datetime": "2026-08-15T12:00:00",
+      "updated_datetime": "2026-08-15T12:05:00"
+    }
+  }
+  ```
 
+#### ➤ DELETE User
+* **Method & Endpoint:** `DELETE /api/users/10001`
+* **Request Payload:** None
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "User deleted successfully" 
+    }
+  }
+  ````
 
-INSERT INTO Item (name, description, price, cost, created_by, created_datetime, updated_datetime)
-VALUES
-    ('Dell UltraSharp 27', 'Monitor 4K USB-C', 7500000, 6000000, 'system', NOW(), NOW()),
-    ('Sony WH-1000XM5', 'Wireless Noise Canceling Headphones', 5500000, 4200000, 'system', NOW(), NOW()),
-    ('Anker PowerCore 24K', 'Power Bank 140W', 2200000, 1600000, 'system', NOW(), NOW()),
-    ('Samsung T7 Shield 1TB', 'Portable SSD External', 1800000, 1300000, 'system', NOW(), NOW()),
-    ('Razer DeathAdder V3', 'Gaming Mouse', 950000, 700000, 'system', NOW(), NOW()),
-    ('HyperX Cloud III', 'Gaming Headset', 1300000, 950000, 'system', NOW(), NOW()),
-    ('Elgato Stream Deck MK.2', 'Control Pad for Content Creators', 2800000, 2100000, 'system', NOW(), NOW()),
-    ('Apple iPad Air M2', 'Tablet Apple 11 inch', 10500000, 9000000, 'system', NOW(), NOW()),
-    ('iPhone 15 Pro 128GB', 'Smartphone Apple', 18500000, 16000000, 'system', NOW(), NOW()),
-    ('Asus ROG Ally', 'Handheld Gaming Console', 11000000, 9500000, 'system', NOW(), NOW()),
-    ('Kindle Paperwhite 11th Gen', 'E-Reader E-Ink Display', 2400000, 1800000, 'system', NOW(), NOW()),
-    ('DJI Osmo Pocket 3', 'Vlogging Camera 4K', 8500000, 7000000, 'system', NOW(), NOW()),
-    ('Smart Desk Lamp RGB', 'Smart Desk Lamp LED', 450000, 300000, 'system', NOW(), NOW()),
-    ('Ugreen 100W GaN Charger', 'Multiport Fast Charger', 750000, 500000, 'system', NOW(), NOW()),
-    ('SanDisk Extreme 128GB', 'MicroSD Card V30', 350000, 220000, 'system', NOW(), NOW()),
-    ('Lian Li O11 Dynamic', 'PC Gaming Case', 2100000, 1500000, 'system', NOW(), NOW()),
-    ('Corsair RM850x', 'Power Supply Unit 850W 80+ Gold', 2300000, 1750000, 'system', NOW(), NOW()),
-    ('NZXT Kraken 240', 'CPU Liquid Cooler', 2600000, 1900000, 'system', NOW(), NOW()),
-    ('Bose SoundLink Flex', 'Portable Bluetooth Speaker', 2500000, 1900000, 'system', NOW(), NOW()),
-    ('TP-Link Archer AX55', 'Wi-Fi 6 Router', 1250000, 900000, 'system', NOW(), NOW());
-```
+### 📦 2. ITEMS API (`/api/items`)
 
-### 3. Configuration & Run
-Before starting, please review the `src/main/resources/application-local.yaml` file and update the database credentials (`username` and `password`) to match your local MySQL setup. Once configured, run the application using Maven with the `local` profile active:
-```bash
-mvn spring-boot:run -Dspring-boot.run.profiles=local
-```
+#### Payload Field Descriptions:
+| Field | Type | Required | Rules & Description |
+| :--- | :--- | :--- | :--- |
+| `name` | String | **Yes** *(on create)* | Cannot be blank. Must be unique across items. |
+| `description` | String | No | Text description of the product/item. |
+| `price` | Integer | **Yes** *(on create)* | Selling price. Must be $\ge 0$ and must be $\ge$ `cost`. |
+| `cost` | Integer | **Yes** *(on create)* | Purchase/production cost. Must be $\ge 0$. |
+
+#### ➤ GET All Items
+* **Method & Endpoint:** `GET /api/items?page=1&size=10`
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": {
+      "success": true,
+      "code": 200,
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d",
+      "message": "All items retrieved successfully"
+    },
+    "data": {
+      "content": [
+        {
+          "id": 1000,
+          "name": "Mechanical Keyboard",
+          "description": "RGB Mechanical Keyboard 75%",
+          "price": 1500000,
+          "cost": 1000000,
+          "created_by": "admin",
+          "updated_by": null,
+          "created_datetime": "2026-08-15T12:00:00",
+          "updated_datetime": "2026-08-15T12:00:00"
+        }
+      ],
+      "page": { "size": 10, "number": 1, "total_elements": 1, "total_pages": 1 }
+    }
+  }
+  ```
+
+#### ➤ GET Item by ID
+* **Method & Endpoint:** `GET /api/items/1000` (or `GET /api/items?id=1000`)
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Item retrieved successfully" 
+    },
+    "data": {
+      "id": 1000,
+      "name": "Mechanical Keyboard",
+      "description": "RGB Mechanical Keyboard 75%",
+      "price": 1500000,
+      "cost": 1000000,
+      "created_by": "admin",
+      "updated_by": null,
+      "created_datetime": "2026-08-15T12:00:00",
+      "updated_datetime": "2026-08-15T12:00:00"
+    }
+  }
+  ```
+
+#### ➤ POST (Create Item)
+* **Method & Endpoint:** `POST /api/items`
+* **Request Payload:**
+  ```json
+  {
+    "name": "Mechanical Keyboard",
+    "description": "RGB Mechanical Keyboard 75%",
+    "price": 1500000,
+    "cost": 1000000
+  }
+  ```
+* **Response (201 Created):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 201, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Item created successfully" 
+    },
+    "data": {
+      "id": 1000,
+      "name": "Mechanical Keyboard",
+      "description": "RGB Mechanical Keyboard 75%",
+      "price": 1500000,
+      "cost": 1000000,
+      "created_by": "1048401782",
+      "updated_by": null,
+      "created_datetime": "2026-08-15T12:00:00",
+      "updated_datetime": "2026-08-15T12:00:00"
+    }
+  }
+  ```
+
+#### ➤ PUT (Update Item)
+* **Method & Endpoint:** `PUT /api/items/1000`
+* **Request Payload:**
+  ```json
+  {
+    "name": "Mechanical Keyboard Pro",
+    "description": "Upgraded Version",
+    "price": 1700000,
+    "cost": 1200000
+  }
+  ```
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Item updated successfully" 
+    },
+    "data": {
+      "id": 1000,
+      "name": "Mechanical Keyboard Pro",
+      "description": "Upgraded Version",
+      "price": 1700000,
+      "cost": 1200000,
+      "created_by": "1048401782",
+      "updated_by": "1048401782",
+      "created_datetime": "2026-08-15T12:00:00",
+      "updated_datetime": "2026-08-15T12:05:00"
+    }
+  }
+  ```
+
+#### ➤ DELETE Item
+* **Method & Endpoint:** `DELETE /api/items/1000`
+* **Request Payload:** None
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Item deleted successfully" 
+    }
+  }
+  ```
+* *Constraint Notice:* Returns `409 Conflict` if the item is currently referenced in an existing Purchase Order.
+
+### 🛒 3. PURCHASE ORDERS API (`/api/purchase-orders`)
+
+#### Payload Field Descriptions:
+| Field | Type | Required | Rules & Description |
+| :--- | :--- | :--- | :--- |
+| `description` | String | No | Summary or note for the Purchase Order header. |
+| `details` | Array | **Yes** | Must contain at least 1 detail item (`@NotEmpty`). |
+| `details[].item_id` | Integer | **Yes** | Existing Item ID in the database (`@NotNull`). |
+| `details[].item_qty` | Integer | **Yes** | Purchased quantity. Must be $> 0$ (`@Min(1)`). |
+
+#### Server-Calculated Fields (Response):
+* `total_price`: Sum of `(item_price * item_qty)` for all items in the details.
+* `total_cost`: Sum of `(item_cost * item_qty)` for all items in the details.
+* `details[].item_price`: Unit price snapshot captured from Item master data at transaction time.
+* `details[].item_cost`: Unit cost snapshot captured from Item master data at transaction time.
+
+---
+
+#### ➤ GET All Purchase Orders
+* **Method & Endpoint:** `GET /api/purchase-orders?page=1&size=10`
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": {
+      "success": true,
+      "code": 200,
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d",
+      "message": "All purchase orders retrieved successfully"
+    },
+    "data": {
+      "content": [
+        {
+          "id": 1,
+          "datetime": "2026-08-15T12:00:00",
+          "description": "Office Supplies Restock",
+          "total_price": 7500000,
+          "total_cost": 5000000,
+          "created_by": "1048401782",
+          "updated_by": null,
+          "created_datetime": "2026-08-15T12:00:00",
+          "updated_datetime": "2026-08-15T12:00:00"
+        }
+      ],
+      "page": { "size": 10, "number": 1, "total_elements": 1, "total_pages": 1 }
+    }
+  }
+  ```
+
+#### ➤ GET Purchase Order by ID
+* **Method & Endpoint:** `GET /api/purchase-orders/1` (or `GET /api/purchase-orders?id=1`)
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Purchase order detail retrieved successfully" 
+    },
+    "data": {
+      "header": {
+        "id": 1,
+        "datetime": "2026-08-15T12:00:00",
+        "description": "Office Supplies Restock",
+        "total_price": 7500000,
+        "total_cost": 5000000,
+        "created_by": "1048401782",
+        "updated_by": null,
+        "created_datetime": "2026-08-15T12:00:00",
+        "updated_datetime": "2026-08-15T12:00:00"
+      },
+      "details": [
+        {
+          "id": 1,
+          "item_id": 1000,
+          "item_qty": 5,
+          "item_price": 1500000,
+          "item_cost": 1000000
+        }
+      ]
+    }
+  }
+  ```
+
+#### ➤ POST (Create Purchase Order)
+* **Method & Endpoint:** `POST /api/purchase-orders`
+* **Request Payload:**
+  ```json
+  {
+    "description": "Office Supplies Restock",
+    "details": [
+      {
+        "item_id": 1000,
+        "item_qty": 5
+      }
+    ]
+  }
+  ```
+* **Response (201 Created):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 201, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Purchase order created successfully" 
+    },
+    "data": {
+      "header": {
+        "id": 1,
+        "datetime": "2026-08-15T12:00:00",
+        "description": "Office Supplies Restock",
+        "total_price": 7500000,
+        "total_cost": 5000000,
+        "created_by": "1048401782",
+        "updated_by": null,
+        "created_datetime": "2026-08-15T12:00:00",
+        "updated_datetime": "2026-08-15T12:00:00"
+      },
+      "details": [
+        {
+          "id": 1,
+          "item_id": 1000,
+          "item_qty": 5,
+          "item_price": 1500000,
+          "item_cost": 1000000
+        }
+      ]
+    }
+  }
+  ```
+
+#### ➤ PUT (Update Purchase Order)
+* **Method & Endpoint:** `PUT /api/purchase-orders/1`
+* **Request Payload:**
+  ```json
+  {
+    "description": "Office Supplies Restock (Revised)",
+    "details": [
+      {
+        "item_id": 1000,
+        "item_qty": 10
+      }
+    ]
+  }
+  ```
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Purchase Order updated successfully" 
+    },
+    "data": {
+      "header": {
+        "id": 1,
+        "datetime": "2026-08-15T12:00:00",
+        "description": "Office Supplies Restock (Revised)",
+        "total_price": 15000000,
+        "total_cost": 10000000,
+        "created_by": "1048401782",
+        "updated_by": "1048401782",
+        "created_datetime": "2026-08-15T12:00:00",
+        "updated_datetime": "2026-08-15T12:05:00"
+      },
+      "details": [
+        {
+          "id": 2,
+          "item_id": 1000,
+          "item_qty": 10,
+          "item_price": 1500000,
+          "item_cost": 1000000
+        }
+      ]
+    }
+  }
+  ```
+* *Execution Note:* Updating a purchase order automatically clears existing detail rows (`header.getDetails().clear()`) and processes the new incoming detail list.
+
+#### ➤ DELETE Purchase Order
+* **Method & Endpoint:** `DELETE /api/purchase-orders/1`
+* **Request Payload:** None
+* **Response (200 OK):**
+  ```json
+  {
+    "meta": { 
+      "success": true, 
+      "code": 200, 
+      "correlation_id": "e3b1aeb1-69c0-4ef4-9859-52254ead7d2d", 
+      "message": "Purchase Order deleted successfully" 
+    }
+  }
+  ```

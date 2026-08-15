@@ -24,7 +24,7 @@ public class PurchaseController {
     private final PurchaseOrderService purchaseOrderService;
 
     @GetMapping
-    public ResponseEntity<BaseResponse<Page<POHeaderResponse>>> getItems(
+    public ResponseEntity<BaseResponse<Page<POHeaderResponse>>> getPurchaseOrders(
             AppRequestContext context,
             Pageable pageable) {
 

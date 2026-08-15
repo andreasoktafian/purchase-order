@@ -9,6 +9,9 @@ spring:
     virtual:
       enabled: true
 
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
   data:
     web:
       pageable:

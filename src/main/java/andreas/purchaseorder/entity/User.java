@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
@@ -16,7 +17,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 @EntityListeners(AuditingEntityListener.class)
-public class User {
+public class User implements Persistable<Integer> {
 
     @Id
     private Integer id;
@@ -43,5 +44,11 @@ public class User {
     @LastModifiedDate
     @Column(name = "updated_datetime")
     private LocalDateTime updatedDatetime;
+
+    @Override
+    @Transient
+    public boolean isNew() {
+        return this.createdDatetime == null;
+    }
 
 }

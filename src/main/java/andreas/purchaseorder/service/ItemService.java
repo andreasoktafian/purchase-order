@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.concurrent.ThreadLocalRandom;
@@ -43,6 +44,7 @@ public class ItemService {
 
     }
 
+    @Transactional
     @LogBusinessEvent("CREATE_ITEM")
     public ItemResponse create(@NonNull ItemCreateRequest request, String actionBy) {
 
@@ -61,6 +63,7 @@ public class ItemService {
 
     }
 
+    @Transactional
     @LogBusinessEvent("UPDATE_ITEM")
     public ItemResponse update(Integer id, @NonNull ItemUpdateRequest request, String actionBy) {
 
@@ -74,6 +77,7 @@ public class ItemService {
 
     }
 
+    @Transactional
     @LogBusinessEvent("DELETE_ITEM")
     public void delete(Integer id) {
 
